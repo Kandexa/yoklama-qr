@@ -384,13 +384,9 @@ def teacher_history(request: Request, db: Session = Depends(get_db)):
         "history.html",
         {"request": request, "sessions": sessions}
     )
-    # ---- Teacher delete single session ----
+# ---- Teacher delete single session ----
 @app.post("/teacher/session/{session_id}/delete")
-def delete_single_session(
-    session_id: int,
-    request: Request,
-    db: Session = Depends(get_db)
-):
+def delete_single_session(session_id: int, request: Request, db: Session = Depends(get_db)):
     payload = require_teacher(request)
     if not payload:
         return RedirectResponse("/login", status_code=302)
@@ -405,16 +401,18 @@ def delete_single_session(
     if not session:
         return HTMLResponse("Oturum bulunamadı.", status_code=404)
 
-    # önce yoklamaları sil
-    db.query(Attendance).filter(
-        Attendance.session_id == session.id
-    ).delete()
+    # ✅ önce yoklamaları sil
+    db.query(Attendance).filter(Attendance.session_id == session.id).delete()
 
-    # sonra oturumu sil
+    # ✅ device kayıtlarını da sil (varsa)
+    db.query(DeviceCheckin).filter(DeviceCheckin.session_id == session.id).delete()
+
+    # ✅ sonra oturumu sil
     db.delete(session)
     db.commit()
 
     return RedirectResponse("/teacher/history", status_code=302)
+
 
 
 # ---- Teacher delete ALL history ----
