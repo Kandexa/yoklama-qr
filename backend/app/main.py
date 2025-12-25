@@ -3,6 +3,7 @@ from dotenv import load_dotenv
 load_dotenv()
 
 import secrets
+import uuid
 from datetime import datetime, timedelta, timezone
 from io import BytesIO
 
@@ -17,13 +18,15 @@ from sqlalchemy.orm import Session
 from sqlalchemy import desc
 
 from .database import Base, engine, get_db, SessionLocal
-from .models import User, ClassSession, Attendance
+from .models import User, ClassSession, Attendance, DeviceCheckin
 from .auth import verify_password, create_access_token, get_user_from_cookie, COOKIE_NAME
 from .seed import seed_users
 
 from zoneinfo import ZoneInfo
 
 TR_TZ = ZoneInfo("Europe/Istanbul")
+
+DEVICE_COOKIE = "device_id"
 
 
 def utc_to_tr(dt: datetime) -> datetime | None:
@@ -44,6 +47,28 @@ def fmt_tr(dt: datetime | None) -> str:
 
 def utcnow() -> datetime:
     return datetime.utcnow()
+
+
+def get_or_set_device_id(request: Request, resp: Response | None = None) -> str:
+    """
+    Tarayıcıya device_id cookie verir.
+    Aynı telefon + aynı tarayıcı = aynı device_id.
+    """
+    device_id = request.cookies.get(DEVICE_COOKIE)
+    if device_id and len(device_id) >= 8:
+        return device_id
+
+    device_id = uuid.uuid4().hex  # 32 char
+    if resp is not None:
+        # 90 gün
+        resp.set_cookie(
+            DEVICE_COOKIE,
+            device_id,
+            httponly=True,
+            samesite="lax",
+            max_age=60 * 60 * 24 * 90,
+        )
+    return device_id
 
 
 app = FastAPI(title="QR Yoklama Sistemi")
@@ -192,16 +217,19 @@ def login(
 
     token = create_access_token({"sub": str(user.id), "role": user.role, "name": user.full_name})
 
-    # ✅ next varsa oraya dön (QR senaryosu)
-    if next and next.startswith("/"):
-        redirect_to = next
+    next_safe = safe_next(next)
+    if next_safe:
+        redirect_to = next_safe
     else:
         redirect_to = "/teacher" if user.role == "teacher" else "/"
 
     resp = RedirectResponse(redirect_to, status_code=302)
     resp.set_cookie(COOKIE_NAME, token, httponly=True, samesite="lax")
-    return resp
 
+    # ✅ device_id cookie (tek telefon = tek yoklama için)
+    get_or_set_device_id(request, resp)
+
+    return resp
 
 
 @app.get("/logout")
@@ -445,10 +473,13 @@ def student_attend_page(session_code: str, request: Request, db: Session = Depen
     if (not session.is_active) or (now > session.expires_at):
         return HTMLResponse("Bu yoklama oturumu kapalı veya süresi dolmuş.", status_code=400)
 
-    return templates.TemplateResponse(
+    resp = templates.TemplateResponse(
         "student_attend.html",
         {"request": request, "session": session, "student_name": payload.get("name")}
     )
+    # ✅ device_id cookie yoksa burada set et
+    get_or_set_device_id(request, resp)
+    return resp
 
 
 @app.post("/s/{session_code}/checkin")
@@ -466,6 +497,24 @@ async def student_checkin(session_code: str, request: Request, db: Session = Dep
     if (not session.is_active) or (now > session.expires_at):
         return HTMLResponse("Oturum kapalı veya süresi dolmuş.", status_code=400)
 
+    # ✅ device_id zorunlu
+    device_id = request.cookies.get(DEVICE_COOKIE)
+    if not device_id:
+        return HTMLResponse("Cihaz doğrulanamadı. Sayfayı yenileyip tekrar dene.", status_code=400)
+
+    # ✅ Aynı cihaz bu oturumda zaten kullanıldı mı?
+    already_used = db.query(DeviceCheckin).filter(
+        DeviceCheckin.session_id == session.id,
+        DeviceCheckin.device_id == device_id,
+    ).first()
+
+    if already_used and already_used.student_id != student_id:
+        return HTMLResponse(
+            "❌ Bu telefon ile bu derste zaten yoklama alındı. Her öğrenci kendi telefonundan yoklama vermeli.",
+            status_code=403
+        )
+
+    # ✅ Öğrenci zaten yoklamaya katıldı mı?
     exists = db.query(Attendance).filter(
         Attendance.session_id == session.id,
         Attendance.student_id == student_id
@@ -473,10 +522,16 @@ async def student_checkin(session_code: str, request: Request, db: Session = Dep
     if exists:
         return HTMLResponse("Zaten yoklamaya katıldın.", status_code=200)
 
+    # ✅ Yoklama kaydı
     attendance = Attendance(session_id=session.id, student_id=student_id)
     db.add(attendance)
     db.commit()
     db.refresh(attendance)
+
+    # ✅ Cihaz kilidi (tek telefon = tek öğrenci)
+    lock = DeviceCheckin(session_id=session.id, device_id=device_id, student_id=student_id)
+    db.add(lock)
+    db.commit()
 
     student = db.query(User).filter(User.id == student_id).first()
     status = compute_status(session, attendance, LATE_MINUTES_DEFAULT)
@@ -491,7 +546,6 @@ async def student_checkin(session_code: str, request: Request, db: Session = Dep
 
     # ✅ öğrenciye ders adı da net gelsin
     return HTMLResponse(f"✅ {session.course_name} yoklaması alındı.", status_code=200)
-
 
 
 # ---- Export (Resmi Rapor) ----

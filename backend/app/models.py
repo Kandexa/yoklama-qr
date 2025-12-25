@@ -3,6 +3,26 @@ from sqlalchemy.orm import Mapped, mapped_column, relationship
 from datetime import datetime
 from .database import Base
 
+from sqlalchemy import Column, Integer, String, DateTime, ForeignKey, UniqueConstraint
+from sqlalchemy.sql import func
+
+# ... (dosyandaki diğer modeller burada)
+
+class DeviceCheckin(Base):
+    __tablename__ = "device_checkins"
+
+    id = Column(Integer, primary_key=True, index=True)
+    session_id = Column(Integer, ForeignKey("class_sessions.id"), nullable=False, index=True)
+    device_id = Column(String(64), nullable=False, index=True)
+    student_id = Column(Integer, ForeignKey("users.id"), nullable=False, index=True)
+    created_at = Column(DateTime(timezone=False), server_default=func.now(), nullable=False)
+
+    __table_args__ = (
+        UniqueConstraint("session_id", "device_id", name="uq_session_device"),
+        UniqueConstraint("session_id", "student_id", name="uq_session_student_once"),
+    )
+
+
 class User(Base):
     __tablename__ = "users"
 
