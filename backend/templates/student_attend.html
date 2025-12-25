@@ -7,7 +7,6 @@
         <h1 class="text-2xl md:text-3xl font-semibold">Yoklama</h1>
         <p class="text-slate-600 mt-1">QR üzerinden yoklama kaydı alınır.</p>
       </div>
-      <a href="/logout" class="text-sm underline text-slate-600 hover:text-slate-900">Çıkış</a>
     </div>
 
     <div class="mt-6 grid grid-cols-1 md:grid-cols-3 gap-4">
@@ -30,7 +29,10 @@
     <div id="statusBox" class="mt-6 rounded-xl border p-4 bg-slate-50">
       <div class="flex items-start gap-3">
         <div class="mt-0.5">
-          <div id="statusIcon" class="w-8 h-8 rounded-full flex items-center justify-center text-white bg-slate-400">…</div>
+          <div id="statusIcon"
+               class="w-8 h-8 rounded-full flex items-center justify-center text-white bg-slate-400">
+            …
+          </div>
         </div>
         <div class="flex-1">
           <div id="statusTitle" class="font-semibold">İşleniyor…</div>
@@ -42,9 +44,20 @@
       </div>
     </div>
 
+    <!-- ACTION BUTTONS -->
     <div class="mt-6 flex flex-wrap gap-3">
-      <a href="/" class="px-4 py-2 rounded-xl border hover:bg-slate-50">Ana sayfa</a>
-      <a href="/logout" class="px-4 py-2 rounded-xl border hover:bg-slate-50">Çıkış</a>
+      <!-- Primary -->
+      <a href="/"
+         class="px-5 py-2.5 rounded-xl bg-slate-900 text-white hover:bg-slate-800 transition">
+        Ana Sayfa
+      </a>
+
+      <!-- Danger -->
+      <a href="/logout"
+         class="px-5 py-2.5 rounded-xl border border-red-500 text-red-600
+                hover:bg-red-50 transition">
+        Çıkış
+      </a>
     </div>
 
     <div class="mt-6 text-xs text-slate-400">
