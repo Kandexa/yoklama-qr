@@ -4,11 +4,8 @@
 
   const lateMinutes = Number(window.__LATE_MINUTES__ || 10);
 
-  // ✅ Backend'den şunu basacağız:
-  // window.__SESSION_STARTED_AT_ISO__ = "2025-12-25T19:10:00" (TR local ISO)
-  // window.__TIMEZONE_OFFSET_MIN__ = -180 (TR için genelde -180)
+  // Backend'den (opsiyonel) başlangıç ISO'su (TR local gibi)
   const sessionStartedIso = window.__SESSION_STARTED_AT_ISO__ || "";
-  const tzOffsetMin = Number(window.__TIMEZONE_OFFSET_MIN__ || 0);
 
   const tbody = document.getElementById("att-table");
 
@@ -24,16 +21,13 @@
     return `<span class="px-2 py-1 rounded-full text-xs bg-emerald-100 text-emerald-700">ZAMANINDA</span>`;
   }
 
-  // ✅ "Z" varsa UTC gibi davranıp saat kaydırmasın diye normalize ediyoruz.
-  // Backend şu an iso + "Z" gönderiyor -> UTC sanılıyor -> TR’de +3 kayıyor.
-  // Bu fonksiyon: "2025-12-25T19:10:11.123Z" => "2025-12-25T19:10:11.123"
+  // "Z" varsa UTC gibi davranıp +3 kaydırmasın diye normalize
   function normalizeIso(iso) {
     if (!iso) return "";
     return String(iso).replace(/Z$/i, "");
   }
 
-  // ✅ ISO parse:
-  // - "Z" kaldırıldıktan sonra Date bunu local gibi parse eder
+  // "Z" kaldırıldıktan sonra Date bunu local gibi parse eder
   function parseIsoLocal(iso) {
     const fixed = normalizeIso(iso);
     const d = new Date(fixed);
@@ -55,13 +49,14 @@
     return `${dd}.${mm}.${yy} ${hh}:${mi}:${ss}`;
   }
 
-  function formatTR(iso) {
+  // Fallback: ISO -> TR format (local parse)
+  function formatTRfromIso(iso) {
     const d = parseIsoLocal(iso);
     if (!d) return "";
     return formatTRfromDate(d);
   }
 
-  // ✅ Status hesapla (backend status gelmezse):
+  // Status hesapla (backend status gelmezse)
   function computeStatus(timestampIso) {
     const t = parseIsoLocal(timestampIso);
     const s = parseIsoLocal(sessionStartedIso);
@@ -70,16 +65,30 @@
     return diffMin > lateMinutes ? "GEÇ" : "ZAMANINDA";
   }
 
-  function upsertRow({ student_no, full_name, timestamp_iso, status }) {
-    if (!tbody) return;
+  // ✅ Saat çözümü:
+  // 1) WS payload içinde time_tr varsa onu kullan
+  // 2) yoksa ISO'dan local parse ile üret (fallback)
+  function resolveTimeTR(data) {
+    const timeTR = (data && data.time_tr) ? String(data.time_tr).trim() : "";
+    if (timeTR) return timeTR;
+
+    const iso = (data && data.timestamp) ? String(data.timestamp).trim() : "";
+    return formatTRfromIso(iso);
+  }
+
+  function upsertRow({ student_no, full_name, time_tr, timestamp_iso, status }) {
+    if (!tbody) return { isNew: false, finalStatus: status || "ZAMANINDA" };
 
     const key = String(student_no || "");
     const rowId = `att-row-${key}`;
     let tr = document.getElementById(rowId);
 
-    const timeTR = formatTR(timestamp_iso);
-
     const finalStatus = status ? status : computeStatus(timestamp_iso);
+
+    // time_tr yoksa ISO'dan üret
+    const timeTR = (time_tr && String(time_tr).trim())
+      ? String(time_tr).trim()
+      : formatTRfromIso(timestamp_iso);
 
     const rowHtml = `
       <td class="p-2">${student_no || ""}</td>
@@ -133,16 +142,24 @@
 
     const student_no = data.username || "";
     const full_name = data.full_name || "";
-    const timestamp_iso = data.timestamp || "";
-    let status = data.status || "";
 
-    // ✅ status hiç gelmezse frontend hesaplasın
+    // backend: timestamp + time_tr + status gönderiyor olmalı
+    const timestamp_iso = data.timestamp || "";
+    const time_tr = resolveTimeTR(data);
+
+    let status = data.status || "";
     if (!status) status = computeStatus(timestamp_iso);
 
-    const { isNew, finalStatus } = upsertRow({ student_no, full_name, timestamp_iso, status });
+    const { isNew, finalStatus } = upsertRow({
+      student_no,
+      full_name,
+      time_tr,
+      timestamp_iso,
+      status
+    });
 
     if (isNew) {
-      // Eğer HTML'de global helper varsa onu kullan (teacher_dashboard.html içinde ekledik)
+      // Eğer teacher_dashboard.html içinde helper varsa
       if (typeof window.__updateStats === "function") {
         const isLate = String(finalStatus).toUpperCase() === "GEÇ" || String(finalStatus).toUpperCase() === "GEC";
         window.__updateStats(1, isLate ? 1 : 0);
