@@ -3,7 +3,7 @@ from dotenv import load_dotenv
 load_dotenv()
 
 import secrets
-from datetime import datetime, timedelta
+from datetime import datetime, timedelta, timezone
 from io import BytesIO
 
 import qrcode
@@ -21,12 +21,12 @@ from .models import User, ClassSession, Attendance
 from .auth import verify_password, create_access_token, get_user_from_cookie, COOKIE_NAME
 from .seed import seed_users
 
-from datetime import timezone
 from zoneinfo import ZoneInfo
 
 TR_TZ = ZoneInfo("Europe/Istanbul")
 
-def utc_to_tr(dt: datetime) -> datetime:
+
+def utc_to_tr(dt: datetime) -> datetime | None:
     """
     DB'deki naive datetime'ı UTC kabul eder, TR saatine çevirir.
     """
@@ -36,31 +36,20 @@ def utc_to_tr(dt: datetime) -> datetime:
         dt = dt.replace(tzinfo=timezone.utc)
     return dt.astimezone(TR_TZ)
 
-def fmt_tr(dt: datetime) -> str:
+
+def fmt_tr(dt: datetime | None) -> str:
     d = utc_to_tr(dt)
     return d.strftime("%d.%m.%Y %H:%M:%S") if d else ""
+
+
+def utcnow() -> datetime:
+    return datetime.utcnow()
 
 
 app = FastAPI(title="QR Yoklama Sistemi")
 
 BASE_URL = os.getenv("BASE_URL", "http://127.0.0.1:8000").rstrip("/")
-
-# ✅ TR Saat Ayarı (Render/Server için env'den değiştirilebilir)
-TZ_OFFSET_HOURS = int(os.getenv("TZ_OFFSET_HOURS", "3"))  # Türkiye: +3
 LATE_MINUTES_DEFAULT = int(os.getenv("LATE_MINUTES_DEFAULT", "10"))
-
-def utcnow() -> datetime:
-    return datetime.utcnow()
-
-def to_local(dt: datetime | None) -> datetime | None:
-    if not dt:
-        return None
-    return dt + timedelta(hours=TZ_OFFSET_HOURS)
-
-def fmt_tr(dt: datetime | None) -> str:
-    if not dt:
-        return ""
-    return to_local(dt).strftime("%d.%m.%Y %H:%M:%S")
 
 # Paths
 APP_DIR = os.path.dirname(os.path.abspath(__file__))   # backend/app
@@ -108,8 +97,7 @@ ws_manager = WSManager()
 
 # ---------------- Helpers ----------------
 def require_login(request: Request):
-    payload = get_user_from_cookie(request)
-    return payload
+    return get_user_from_cookie(request)
 
 
 def require_teacher(request: Request):
@@ -137,9 +125,21 @@ def compute_status(session: ClassSession, att: Attendance | None, late_minutes: 
     return "GEÇ" if diff_min > late_minutes else "ZAMANINDA"
 
 
+def safe_next(n: str | None) -> str | None:
+    """
+    Open-redirect olmasın diye sadece site içi path kabul ediyoruz.
+    """
+    if not n:
+        return None
+    n = n.strip()
+    if n.startswith("/") and not n.startswith("//"):
+        return n
+    return None
+
+
 # ---------------- Routes ----------------
 @app.get("/", response_class=HTMLResponse)
-def home(request: Request, db: Session = Depends(get_db)):
+def home(request: Request):
     payload = get_user_from_cookie(request)
     if not payload:
         return RedirectResponse("/login", status_code=302)
@@ -148,20 +148,12 @@ def home(request: Request, db: Session = Depends(get_db)):
     if payload["role"] == "teacher":
         return RedirectResponse("/teacher", status_code=302)
 
-    # Öğrenci -> aktif oturum varsa direkt ona yönlendir (PRO)
-    active = (
-        db.query(ClassSession)
-        .filter(ClassSession.is_active == True)
-        .order_by(desc(ClassSession.started_at))
-        .first()
-    )
-    if active:
-        return RedirectResponse(f"/s/{active.session_code}", status_code=302)
-
+    # ✅ Öğrenci QR olmadan derse girmesin (dersi QR belirler)
     return HTMLResponse(
         f"<html><body style='font-family:Arial;padding:24px'>"
-        f"Giriş yaptın: {payload.get('name')}<br/>"
-        f"Şu an aktif yoklama oturumu yok.<br/>"
+        f"<h3>Öğrenci</h3>"
+        f"Giriş yaptın: {payload.get('name')}<br/><br/>"
+        f"Yoklama almak için hocanın oluşturduğu QR kodunu okut.<br/><br/>"
         f"<a href='/logout'>Çıkış</a>"
         f"</body></html>"
     )
@@ -181,7 +173,9 @@ def register_closed_post():
 # ---- Login ----
 @app.get("/login", response_class=HTMLResponse)
 def login_page(request: Request):
-    return templates.TemplateResponse("login.html", {"request": request})
+    # ✅ QR'dan gelen kullanıcı login olunca geri dönebilsin
+    next_url = request.query_params.get("next") or ""
+    return templates.TemplateResponse("login.html", {"request": request, "next": next_url})
 
 
 @app.post("/login")
@@ -190,15 +184,24 @@ def login(
     db: Session = Depends(get_db),
     username: str = Form(...),
     password: str = Form(...),
+    next: str = Form("", alias="next"),
 ):
     user = db.query(User).filter(User.username == username.strip()).first()
     if not user or not verify_password(password, user.password_hash):
         return HTMLResponse("Hatalı giriş.", status_code=400)
 
     token = create_access_token({"sub": str(user.id), "role": user.role, "name": user.full_name})
-    resp = RedirectResponse("/teacher" if user.role == "teacher" else "/", status_code=302)
+
+    # ✅ next varsa oraya dön (QR senaryosu)
+    if next and next.startswith("/"):
+        redirect_to = next
+    else:
+        redirect_to = "/teacher" if user.role == "teacher" else "/"
+
+    resp = RedirectResponse(redirect_to, status_code=302)
     resp.set_cookie(COOKIE_NAME, token, httponly=True, samesite="lax")
     return resp
+
 
 
 @app.get("/logout")
@@ -226,9 +229,6 @@ def teacher_dashboard(request: Request, db: Session = Depends(get_db)):
 
     attendances = []
     qr_url = None
-
-    # ✅ Template kırılmasın diye: attendances RAW yine duruyor
-    # ✅ Ayrıca: attendances_view = status + öğrenciNo + TR saat (boş durum bugını bitirir)
     attendances_view = []
 
     if active_session:
@@ -250,11 +250,10 @@ def teacher_dashboard(request: Request, db: Session = Depends(get_db)):
                 "timestamp_iso": a.timestamp.isoformat() + "Z",
             })
 
-        # oturum TR saat alanları (template kullanır)
+        # template için TR tarih alanları
         active_session.started_at_tr = fmt_tr(active_session.started_at)
         active_session.expires_at_tr = fmt_tr(active_session.expires_at)
 
-    # ISTATISTIK (panel kartları için)
     students_total = db.query(User).filter(User.role == "student").count()
     present_count = len({a.student_id for a in attendances}) if active_session else 0
     late_count = 0
@@ -271,25 +270,15 @@ def teacher_dashboard(request: Request, db: Session = Depends(get_db)):
             "teacher_name": payload.get("name"),
             "active_session": active_session,
             "qr_url": qr_url,
-
-            # eski davranış
             "attendances": attendances,
-
-            # ✅ yeni: tabloda kesin status göstermek için
             "attendances_view": attendances_view,
-
             "late_minutes": LATE_MINUTES_DEFAULT,
             "students_total": students_total,
             "present_count": present_count,
             "late_count": late_count,
             "absent_count": absent_count,
-
-            # ✅ sayaç için (hocada countdown)
             "expires_at_iso": (active_session.expires_at.isoformat() + "Z") if active_session else None,
             "now_iso": utcnow().isoformat() + "Z",
-
-            # ✅ TR offset bilgisi
-            "tz_offset_hours": TZ_OFFSET_HOURS,
         },
     )
 
@@ -307,14 +296,14 @@ def teacher_start(
 
     teacher_id = int(payload["sub"])
 
-    # eski aktif session'ı kapat
-    db.query(ClassSession).filter(ClassSession.teacher_id == teacher_id, ClassSession.is_active == True).update(
-        {"is_active": False}
-    )
+    db.query(ClassSession).filter(
+        ClassSession.teacher_id == teacher_id,
+        ClassSession.is_active == True
+    ).update({"is_active": False})
     db.commit()
 
     code = secrets.token_urlsafe(8).replace("-", "").replace("_", "")[:10]
-    now = utcnow()  # ✅ tek kaynaktan UTC
+    now = utcnow()
 
     session = ClassSession(
         course_name=course_name.strip(),
@@ -337,9 +326,10 @@ def teacher_stop(request: Request, db: Session = Depends(get_db)):
         return RedirectResponse("/login", status_code=302)
 
     teacher_id = int(payload["sub"])
-    db.query(ClassSession).filter(ClassSession.teacher_id == teacher_id, ClassSession.is_active == True).update(
-        {"is_active": False}
-    )
+    db.query(ClassSession).filter(
+        ClassSession.teacher_id == teacher_id,
+        ClassSession.is_active == True
+    ).update({"is_active": False})
     db.commit()
     return RedirectResponse("/teacher", status_code=302)
 
@@ -358,7 +348,6 @@ def teacher_history(request: Request, db: Session = Depends(get_db)):
         .all()
     )
 
-    # ✅ history'de de TR saat göstermek istersen template hazır olsun
     for s in sessions:
         s.started_at_tr = fmt_tr(s.started_at)
         s.expires_at_tr = fmt_tr(s.expires_at)
@@ -445,7 +434,8 @@ def qr_png(session_code: str):
 def student_attend_page(session_code: str, request: Request, db: Session = Depends(get_db)):
     payload = require_student(request)
     if not payload:
-        return RedirectResponse("/login", status_code=302)
+        # ✅ login sonrası tekrar QR sayfasına dön
+        return RedirectResponse(url=f"/login?next=/s/{session_code}", status_code=302)
 
     session = db.query(ClassSession).filter(ClassSession.session_code == session_code).first()
     if not session:
@@ -454,10 +444,6 @@ def student_attend_page(session_code: str, request: Request, db: Session = Depen
     now = utcnow()
     if (not session.is_active) or (now > session.expires_at):
         return HTMLResponse("Bu yoklama oturumu kapalı veya süresi dolmuş.", status_code=400)
-
-    # ✅ template için TR alanlar
-    session.started_at_tr = fmt_tr(session.started_at)
-    session.expires_at_tr = fmt_tr(session.expires_at)
 
     return templates.TemplateResponse(
         "student_attend.html",
@@ -469,7 +455,7 @@ def student_attend_page(session_code: str, request: Request, db: Session = Depen
 async def student_checkin(session_code: str, request: Request, db: Session = Depends(get_db)):
     payload = require_student(request)
     if not payload:
-        return RedirectResponse("/login", status_code=302)
+        return RedirectResponse(url=f"/login?next=/s/{session_code}", status_code=302)
 
     student_id = int(payload["sub"])
     session = db.query(ClassSession).filter(ClassSession.session_code == session_code).first()
@@ -493,10 +479,8 @@ async def student_checkin(session_code: str, request: Request, db: Session = Dep
     db.refresh(attendance)
 
     student = db.query(User).filter(User.id == student_id).first()
-
     status = compute_status(session, attendance, LATE_MINUTES_DEFAULT)
 
-    # ✅ WS ile gönderilen payload: hem eski alanlar, hem TR/time_str
     await ws_manager.broadcast(session.id, {
         "username": student.username if student else "",
         "full_name": student.full_name if student else "",
@@ -505,7 +489,9 @@ async def student_checkin(session_code: str, request: Request, db: Session = Dep
         "status": status,
     })
 
-    return HTMLResponse("✅ Yoklamaya başarıyla katıldın.", status_code=200)
+    # ✅ öğrenciye ders adı da net gelsin
+    return HTMLResponse(f"✅ {session.course_name} yoklaması alındı.", status_code=200)
+
 
 
 # ---- Export (Resmi Rapor) ----
@@ -563,17 +549,6 @@ def export_session_csv(session_id: int, request: Request, db: Session = Depends(
             durum = compute_status(session, att, late_minutes)
             yield f"{s.username}{sep}{s.full_name}{sep}{saat}{sep}{durum}{sep}\r\n"
 
-        total = len(students)
-        present_count = len(present_by_student_id)
-        late_count = sum(1 for a in attendances if compute_status(session, a, late_minutes) == "GEÇ")
-        absent_count = total - present_count
-
-        yield "\r\nÖZET\r\n"
-        yield f"Toplam{sep}{total}\r\n"
-        yield f"Katılan{sep}{present_count}\r\n"
-        yield f"Geç Kalan{sep}{late_count}\r\n"
-        yield f"Katılmayan{sep}{absent_count}\r\n"
-
     filename = f"yoklama_{session.course_name}_{session.id}_rapor.csv".replace(" ", "_")
     return StreamingResponse(
         generate(),
@@ -612,11 +587,6 @@ def export_session_excel(session_id: int, request: Request, db: Session = Depend
         .all()
     )
 
-    total = len(students)
-    present_count = len(present_by_student_id)
-    late_count = sum(1 for a in attendances if compute_status(session, a, late_minutes) == "GEÇ")
-    absent_count = total - present_count
-
     def esc(x: str):
         return (
             (x or "")
@@ -653,13 +623,6 @@ def export_session_excel(session_id: int, request: Request, db: Session = Depend
         saat = fmt_tr(att.timestamp) if att else ""
         durum = compute_status(session, att, late_minutes)
         row(s.username, s.full_name, saat, durum, "")
-
-    row("")
-    row("ÖZET")
-    row("Toplam", str(total))
-    row("Katılan", str(present_count))
-    row("Geç Kalan", str(late_count))
-    row("Katılmayan", str(absent_count))
 
     xml = f"""<?xml version="1.0" encoding="UTF-8"?>
 <?mso-application progid="Excel.Sheet"?>
