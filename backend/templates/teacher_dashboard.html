@@ -88,7 +88,7 @@
       </div>
 
       <script>
-        // ✅ Countdown (backend: expires_at_iso + now_iso)
+        // ✅ Countdown: backend ISO'ları UTC olsa bile fark doğru; sadece gösterim MM:SS
         (function() {
           const expiresIso = "{{ expires_at_iso or '' }}";
           const nowIso = "{{ now_iso or '' }}";
@@ -155,7 +155,7 @@
                 <td class="p-2">{{ a.student_no }}</td>
                 <td class="p-2">{{ a.full_name }}</td>
                 <td class="p-2">{{ a.time_tr }}</td>
-                <td class="p-2" data-status-cell="1">
+                <td class="p-2">
                   {% if a.status == "GEÇ" %}
                     <span class="px-2 py-1 rounded-full text-xs bg-rose-100 text-rose-700">GEÇ</span>
                   {% else %}
@@ -171,24 +171,20 @@
       <p class="text-xs text-slate-500 mt-2">Geç kuralı: {{ late_minutes }} dk sonrası GEÇ.</p>
 
       <script>
-  window.__SESSION_ID__ = Number("{{ active_session.id }}");
-  window.__LATE_MINUTES__ = Number("{{ late_minutes }}");
+        window.__SESSION_ID__ = Number("{{ active_session.id }}");
+        window.__LATE_MINUTES__ = Number("{{ late_minutes }}");
 
-  // ✅ teacher_ws.js için gerekli:
-  window.__SESSION_STARTED_AT_ISO__ = "{{ session_started_at_iso or '' }}";
-  window.__TIMEZONE_OFFSET_MIN__ = Number("{{ tz_offset_min or 0 }}");
-
-  window.__STATS__ = {
-    students_total: Number("{{ students_total }}"),
-    present_count: Number("{{ present_count }}"),
-    late_count: Number("{{ late_count }}"),
-    absent_count: Number("{{ absent_count }}"),
-  };
-</script>
-
+        // Kartlar için başlangıç değerleri
+        window.__STATS__ = {
+          students_total: Number("{{ students_total }}"),
+          present_count: Number("{{ present_count }}"),
+          late_count: Number("{{ late_count }}"),
+          absent_count: Number("{{ absent_count }}"),
+        };
+      </script>
 
       <script>
-        // ✅ teacher_ws.js çalışsa da çalışmasa da kartları burada garanti güncelle
+        // ✅ teacher_ws.js'in kullanması için helper fonksiyon
         (function(){
           const s = window.__STATS__ || {};
           const totalEl = document.getElementById("students-total");
@@ -201,7 +197,6 @@
           if(lateEl) lateEl.textContent = s.late_count ?? lateEl.textContent;
           if(absentEl) absentEl.textContent = s.absent_count ?? absentEl.textContent;
 
-          // ✅ teacher_ws.js'in kullanması için helper fonksiyon
           window.__updateStats = function(deltaPresent, deltaLate){
             const total = Number(totalEl?.textContent || 0);
             let present = Number(presentEl?.textContent || 0);
