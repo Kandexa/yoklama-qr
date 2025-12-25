@@ -1,0 +1,85 @@
+{% extends "base.html" %}
+{% block content %}
+<div class="flex items-center justify-between">
+  <div>
+    <h1 class="text-3xl font-bold">Oturum Detayı</h1>
+    <div class="text-sm text-slate-600 mt-1">
+      Ders: <b>{{ session.course_name }}</b> |
+      Başlangıç: {{ session.started_at }} |
+      Bitiş: {{ session.expires_at }}
+    </div>
+  </div>
+
+  <div class="flex gap-4">
+    <a class="text-blue-700 underline" href="/teacher">Geri</a>
+    <a class="text-blue-700 underline" href="/teacher/session/{{ session.id }}/export.csv">CSV</a>
+    <a class="text-blue-700 underline" href="/teacher/session/{{ session.id }}/export.xlsx">Excel</a>
+    <a class="text-slate-700 underline" href="/logout">Çıkış</a>
+  </div>
+</div>
+
+<div class="grid md:grid-cols-2 gap-6 mt-6">
+
+  <div class="bg-white rounded-2xl shadow p-5">
+    <h2 class="text-xl font-semibold">Katılanlar ({{ present_list|length }})</h2>
+    <div class="mt-4 overflow-x-auto border rounded-xl">
+      <table class="w-full text-sm">
+        <thead class="bg-slate-50">
+          <tr>
+            <th class="text-left p-2">Öğrenci No</th>
+            <th class="text-left p-2">Ad Soyad</th>
+            <th class="text-left p-2">Zaman</th>
+            <th class="text-left p-2">Durum</th>
+          </tr>
+        </thead>
+        <tbody>
+          {% for r in present_list %}
+          <tr class="border-t">
+            <td class="p-2">{{ r.username }}</td>
+            <td class="p-2">{{ r.full_name }}</td>
+            <td class="p-2">{{ r.timestamp.strftime("%d.%m.%Y %H:%M:%S") }}</td>
+            <td class="p-2">
+              {% if r.status == "GEÇ" %}
+                <span class="px-2 py-1 rounded-full text-xs bg-rose-100 text-rose-700">GEÇ</span>
+              {% else %}
+                <span class="px-2 py-1 rounded-full text-xs bg-emerald-100 text-emerald-700">ZAMANINDA</span>
+              {% endif %}
+            </td>
+          </tr>
+          {% endfor %}
+          {% if present_list|length == 0 %}
+            <tr><td class="p-3 text-slate-500" colspan="4">Katılan yok.</td></tr>
+          {% endif %}
+        </tbody>
+      </table>
+    </div>
+    <div class="mt-3 text-xs text-slate-500">Geç kuralı: {{ late_minutes }} dk sonrası GEÇ.</div>
+  </div>
+
+  <div class="bg-white rounded-2xl shadow p-5">
+    <h2 class="text-xl font-semibold">Katılmayanlar ({{ absent_list|length }})</h2>
+    <div class="mt-4 overflow-x-auto border rounded-xl">
+      <table class="w-full text-sm">
+        <thead class="bg-slate-50">
+          <tr>
+            <th class="text-left p-2">Öğrenci No</th>
+            <th class="text-left p-2">Ad Soyad</th>
+          </tr>
+        </thead>
+        <tbody>
+          {% for r in absent_list %}
+          <tr class="border-t">
+            <td class="p-2">{{ r.username }}</td>
+            <td class="p-2">{{ r.full_name }}</td>
+          </tr>
+          {% endfor %}
+          {% if absent_list|length == 0 %}
+            <tr><td class="p-3 text-slate-500" colspan="2">Katılmayan yok.</td></tr>
+          {% endif %}
+        </tbody>
+      </table>
+    </div>
+  </div>
+
+</div>
+{% endblock %}

@@ -1,0 +1,7 @@
+services:
+  - type: web
+    name: yoklama-qr
+    env: docker
+    plan: free
+    autoDeploy: true
+    rootDir: backend

@@ -1,0 +1,66 @@
+{% extends "base.html" %}
+{% block content %}
+<div class="max-w-3xl mx-auto px-4 py-10">
+  <div class="bg-white rounded-2xl shadow p-6 md:p-8">
+    <div class="flex items-start justify-between gap-4">
+      <div>
+        <h1 class="text-2xl md:text-3xl font-semibold">Yoklama</h1>
+        <p class="text-slate-600 mt-1">QR üzerinden yoklama kaydı alınır.</p>
+      </div>
+      <a href="/logout" class="text-sm underline text-slate-600 hover:text-slate-900">Çıkış</a>
+    </div>
+
+    <div class="mt-6 grid grid-cols-1 md:grid-cols-3 gap-4">
+      <div class="rounded-xl border p-4 bg-slate-50">
+        <div class="text-xs text-slate-500">Ders</div>
+        <div class="font-semibold mt-1">{{ session.course_name }}</div>
+      </div>
+      <div class="rounded-xl border p-4 bg-slate-50">
+        <div class="text-xs text-slate-500">Öğrenci</div>
+        <div class="font-semibold mt-1">{{ student_name }}</div>
+      </div>
+      <div class="rounded-xl border p-4 bg-slate-50">
+        <div class="text-xs text-slate-500">Kalan Süre</div>
+        <div class="font-semibold mt-1" id="countdown">--:--</div>
+        <div class="text-xs text-slate-500 mt-1">Oturum bitince otomatik kapanır.</div>
+      </div>
+    </div>
+
+    <!-- STATUS BOX -->
+    <div id="statusBox" class="mt-6 rounded-xl border p-4 bg-slate-50">
+      <div class="flex items-start gap-3">
+        <div class="mt-0.5">
+          <div id="statusIcon" class="w-8 h-8 rounded-full flex items-center justify-center text-white bg-slate-400">…</div>
+        </div>
+        <div class="flex-1">
+          <div id="statusTitle" class="font-semibold">İşleniyor…</div>
+          <div id="statusDesc" class="text-sm text-slate-600 mt-1">
+            Yoklama kaydın alınıyor, lütfen bekle.
+          </div>
+          <div id="statusMeta" class="text-xs text-slate-500 mt-2"></div>
+        </div>
+      </div>
+    </div>
+
+    <div class="mt-6 flex flex-wrap gap-3">
+      <a href="/" class="px-4 py-2 rounded-xl border hover:bg-slate-50">Ana sayfa</a>
+      <a href="/logout" class="px-4 py-2 rounded-xl border hover:bg-slate-50">Çıkış</a>
+    </div>
+
+    <div class="mt-6 text-xs text-slate-400">
+      Kural: Ders başlangıcından <b>10 dakika</b> sonra gelenler <b>GEÇ</b> sayılır.
+    </div>
+  </div>
+</div>
+
+<!-- Data for JS -->
+<script>
+  window.__ATTEND__ = {
+    sessionCode: "{{ session.session_code }}",
+    startedAt: "{{ session.started_at.isoformat() }}Z",
+    expiresAt: "{{ session.expires_at.isoformat() }}Z",
+    graceMinutes: 10
+  };
+</script>
+<script src="/static/student_attend.js"></script>
+{% endblock %}

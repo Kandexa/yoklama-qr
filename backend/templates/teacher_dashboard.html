@@ -1,0 +1,227 @@
+{% extends "base.html" %}
+{% block content %}
+<div class="flex items-start justify-between gap-4">
+  <div>
+    <h1 class="text-2xl font-semibold">Hoca Paneli</h1>
+    <p class="text-slate-600 text-sm mt-1">Merhaba, {{ teacher_name }}</p>
+  </div>
+  <div class="text-sm flex items-center gap-3">
+    <a class="underline" href="/teacher/history">Geçmiş Kayıtlar</a>
+    <a class="underline" href="/logout">Çıkış</a>
+  </div>
+</div>
+
+{% if active_session %}
+  <!-- ÜST KARTLAR -->
+  <div class="grid sm:grid-cols-2 lg:grid-cols-4 gap-4 mt-6">
+    <div class="bg-white rounded-2xl shadow p-4">
+      <div class="text-sm text-slate-600">Toplam Öğrenci</div>
+      <div class="text-2xl font-semibold mt-1" id="students-total">{{ students_total }}</div>
+    </div>
+
+    <div class="bg-white rounded-2xl shadow p-4">
+      <div class="text-sm text-slate-600">Katılan</div>
+      <div class="text-2xl font-semibold mt-1" id="present-count">{{ present_count }}</div>
+    </div>
+
+    <div class="bg-white rounded-2xl shadow p-4">
+      <div class="text-sm text-slate-600">Geç Kalan</div>
+      <div class="text-2xl font-semibold mt-1" id="late-count">{{ late_count }}</div>
+    </div>
+
+    <div class="bg-white rounded-2xl shadow p-4">
+      <div class="text-sm text-slate-600">Katılmayan</div>
+      <div class="text-2xl font-semibold mt-1" id="absent-count">{{ absent_count }}</div>
+    </div>
+  </div>
+{% endif %}
+
+<div class="grid md:grid-cols-2 gap-4 mt-6">
+  <!-- SOL: OTURUM -->
+  <div class="bg-white rounded-2xl shadow p-5">
+    <h2 class="font-semibold mb-3">Ders Oturumu</h2>
+
+    {% if active_session %}
+      <div class="space-y-2">
+        <div class="text-sm">
+          <span class="text-slate-500">Ders:</span> <b>{{ active_session.course_name }}</b>
+        </div>
+
+        <div class="text-sm">
+          <span class="text-slate-500">Başladı:</span>
+          {{ active_session.started_at_tr if active_session.started_at_tr else active_session.started_at }}
+        </div>
+
+        <div class="text-sm">
+          <span class="text-slate-500">Bitiş:</span>
+          {{ active_session.expires_at_tr if active_session.expires_at_tr else active_session.expires_at }}
+        </div>
+
+        <!-- ✅ HOCA GERI SAYIM -->
+        <div class="mt-2 text-sm">
+          <span class="text-slate-500">Kalan Süre:</span>
+          <b id="countdown">--:--</b>
+          <span class="text-slate-500 text-xs ml-2">(Oturum bitince otomatik kapanır)</span>
+        </div>
+
+        <div class="mt-3 p-3 rounded-xl bg-slate-50 border">
+          <div class="text-xs text-slate-500">QR Görsel</div>
+          <div class="mt-2 flex items-center gap-4">
+            <img
+              src="/qr/{{ active_session.session_code }}.png"
+              alt="QR"
+              class="w-44 h-44 border rounded-xl bg-white p-2"
+            />
+            <div class="text-xs text-slate-600">
+              Öğrenciler bu QR’ı okutup giriş yapacak.<br/>
+              Link: <span class="font-mono break-all">{{ qr_url }}</span>
+              <div class="mt-2">
+                <a class="underline text-slate-700" href="/teacher/session/{{ active_session.id }}">Oturum Detayı</a>
+              </div>
+            </div>
+          </div>
+        </div>
+
+        <form method="post" action="/teacher/stop">
+          <button class="mt-3 bg-rose-600 text-white px-4 py-2 rounded-lg">Oturumu Kapat</button>
+        </form>
+      </div>
+
+      <script>
+        // ✅ Countdown (backend: expires_at_iso + now_iso)
+        (function() {
+          const expiresIso = "{{ expires_at_iso or '' }}";
+          const nowIso = "{{ now_iso or '' }}";
+          if (!expiresIso || !nowIso) return;
+
+          const el = document.getElementById("countdown");
+          const expires = new Date(expiresIso).getTime();
+          let now = new Date(nowIso).getTime();
+
+          function pad(n){ return String(n).padStart(2, "0"); }
+
+          function tick() {
+            const diff = expires - now;
+            if (diff <= 0) {
+              el.textContent = "00:00";
+              return;
+            }
+            const totalSec = Math.floor(diff / 1000);
+            const m = Math.floor(totalSec / 60);
+            const s = totalSec % 60;
+            el.textContent = pad(m) + ":" + pad(s);
+            now += 1000;
+            setTimeout(tick, 1000);
+          }
+          tick();
+        })();
+      </script>
+
+    {% else %}
+      <form method="post" action="/teacher/start" class="space-y-3">
+        <div>
+          <label class="text-sm">Ders Adı</label>
+          <input name="course_name" class="w-full border rounded-lg px-3 py-2" placeholder="Örn: Matematik" required />
+        </div>
+        <div>
+          <label class="text-sm">Süre (dk)</label>
+          <input name="duration_minutes" type="number" min="5" max="240" value="60" class="w-full border rounded-lg px-3 py-2" required />
+        </div>
+        <button class="w-full bg-slate-900 text-white rounded-lg py-2">Dersi Başlat</button>
+      </form>
+    {% endif %}
+  </div>
+
+  <!-- SAG: ANLIK YOKLAMA -->
+  <div class="bg-white rounded-2xl shadow p-5">
+    <h2 class="font-semibold mb-3">Anlık Yoklama</h2>
+
+    {% if active_session %}
+      <p class="text-sm text-slate-600 mb-3">Öğrenci katıldıkça aşağıya otomatik düşer.</p>
+
+      <div class="overflow-auto border rounded-xl">
+        <table class="w-full text-sm">
+          <thead class="bg-slate-50">
+            <tr>
+              <th class="text-left p-2">Öğrenci No</th>
+              <th class="text-left p-2">Ad Soyad</th>
+              <th class="text-left p-2">Zaman (TR)</th>
+              <th class="text-left p-2">Durum</th>
+            </tr>
+          </thead>
+          <tbody id="att-table">
+            {% for a in attendances_view %}
+              <tr class="border-t" id="att-row-{{ a.student_no }}">
+                <td class="p-2">{{ a.student_no }}</td>
+                <td class="p-2">{{ a.full_name }}</td>
+                <td class="p-2">{{ a.time_tr }}</td>
+                <td class="p-2" data-status-cell="1">
+                  {% if a.status == "GEÇ" %}
+                    <span class="px-2 py-1 rounded-full text-xs bg-rose-100 text-rose-700">GEÇ</span>
+                  {% else %}
+                    <span class="px-2 py-1 rounded-full text-xs bg-emerald-100 text-emerald-700">ZAMANINDA</span>
+                  {% endif %}
+                </td>
+              </tr>
+            {% endfor %}
+          </tbody>
+        </table>
+      </div>
+
+      <p class="text-xs text-slate-500 mt-2">Geç kuralı: {{ late_minutes }} dk sonrası GEÇ.</p>
+
+      <script>
+  window.__SESSION_ID__ = Number("{{ active_session.id }}");
+  window.__LATE_MINUTES__ = Number("{{ late_minutes }}");
+
+  // ✅ teacher_ws.js için gerekli:
+  window.__SESSION_STARTED_AT_ISO__ = "{{ session_started_at_iso or '' }}";
+  window.__TIMEZONE_OFFSET_MIN__ = Number("{{ tz_offset_min or 0 }}");
+
+  window.__STATS__ = {
+    students_total: Number("{{ students_total }}"),
+    present_count: Number("{{ present_count }}"),
+    late_count: Number("{{ late_count }}"),
+    absent_count: Number("{{ absent_count }}"),
+  };
+</script>
+
+
+      <script>
+        // ✅ teacher_ws.js çalışsa da çalışmasa da kartları burada garanti güncelle
+        (function(){
+          const s = window.__STATS__ || {};
+          const totalEl = document.getElementById("students-total");
+          const presentEl = document.getElementById("present-count");
+          const lateEl = document.getElementById("late-count");
+          const absentEl = document.getElementById("absent-count");
+
+          if(totalEl) totalEl.textContent = s.students_total ?? totalEl.textContent;
+          if(presentEl) presentEl.textContent = s.present_count ?? presentEl.textContent;
+          if(lateEl) lateEl.textContent = s.late_count ?? lateEl.textContent;
+          if(absentEl) absentEl.textContent = s.absent_count ?? absentEl.textContent;
+
+          // ✅ teacher_ws.js'in kullanması için helper fonksiyon
+          window.__updateStats = function(deltaPresent, deltaLate){
+            const total = Number(totalEl?.textContent || 0);
+            let present = Number(presentEl?.textContent || 0);
+            let late = Number(lateEl?.textContent || 0);
+
+            present += (deltaPresent || 0);
+            late += (deltaLate || 0);
+
+            if(presentEl) presentEl.textContent = String(present);
+            if(lateEl) lateEl.textContent = String(late);
+            if(absentEl) absentEl.textContent = String(Math.max(0, total - present));
+          }
+        })();
+      </script>
+
+      <script src="/static/teacher_ws.js"></script>
+
+    {% else %}
+      <p class="text-sm text-slate-600">Önce bir ders oturumu başlat.</p>
+    {% endif %}
+  </div>
+</div>
+{% endblock %}
