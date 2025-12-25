@@ -412,6 +412,23 @@ def delete_single_session(session_id: int, request: Request, db: Session = Depen
     db.commit()
 
     return RedirectResponse("/teacher/history", status_code=302)
+@app.post("/teacher/history/delete-all")
+def delete_all_history(request: Request, db: Session = Depends(get_db)):
+    payload = require_teacher(request)
+    if not payload:
+        return RedirectResponse("/login", status_code=302)
+
+    teacher_id = int(payload["sub"])
+
+    sessions = db.query(ClassSession).filter(ClassSession.teacher_id == teacher_id).all()
+
+    for s in sessions:
+        db.query(Attendance).filter(Attendance.session_id == s.id).delete()
+        db.query(DeviceCheckin).filter(DeviceCheckin.session_id == s.id).delete()
+        db.delete(s)
+
+    db.commit()
+    return RedirectResponse("/teacher/history", status_code=302)
 
 
 
