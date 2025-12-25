@@ -1,26 +1,72 @@
 {% extends "base.html" %}
 {% block content %}
-<div class="max-w-md mx-auto px-4 py-10">
-  <div class="bg-white rounded-2xl shadow p-6 md:p-8">
-    <h1 class="text-2xl font-semibold">Giriş</h1>
-    <p class="text-slate-600 mt-1 text-sm">Devam etmek için giriş yap.</p>
+<div class="max-w-md mx-auto px-4 py-12">
+  <div class="bg-white rounded-2xl shadow p-6">
+    <h1 class="text-2xl font-semibold mb-2">Giriş Yap</h1>
+    <p class="text-sm text-slate-600 mb-6">
+      Kullanıcı adın ve şifren ile giriş yap.
+    </p>
 
-    <form method="post" action="/login" class="mt-6 space-y-3">
-      <!-- ✅ QR'dan geldiyse login sonrası geri dönsün -->
-      <input type="hidden" name="next" value="{{ next or '' }}"/>
+    <form method="post" action="/login" class="space-y-4">
+      {% if next %}
+        <input type="hidden" name="next" value="{{ next }}">
+      {% endif %}
 
+      <!-- Kullanıcı Adı -->
       <div>
-        <label class="text-sm">Kullanıcı Adı</label>
-        <input name="username" class="w-full border rounded-lg px-3 py-2" placeholder="Kullanıcı Adı" required />
+        <label class="text-sm text-slate-600">Kullanıcı Adı</label>
+        <input
+          type="text"
+          name="username"
+          required
+          class="w-full mt-1 border rounded-xl px-3 py-2 focus:outline-none focus:ring"
+        />
       </div>
 
+      <!-- Şifre -->
       <div>
-        <label class="text-sm">Şifre</label>
-        <input name="password" type="password" class="w-full border rounded-lg px-3 py-2" placeholder="••••••••" required />
+        <label class="text-sm text-slate-600">Şifre</label>
+        <div class="relative mt-1">
+          <input
+            id="passwordInput"
+            type="password"
+            name="password"
+            required
+            class="w-full border rounded-xl px-3 py-2 pr-10 focus:outline-none focus:ring"
+          />
+
+          <!-- 👁️ GÖZ BUTONU -->
+          <button
+            type="button"
+            id="togglePassword"
+            class="absolute inset-y-0 right-2 flex items-center text-slate-500 hover:text-slate-900"
+            tabindex="-1"
+          >
+            👁️
+          </button>
+        </div>
       </div>
 
-      <button class="w-full bg-slate-900 text-white rounded-lg py-2">Giriş Yap</button>
+      <button
+        type="submit"
+        class="w-full bg-slate-900 text-white rounded-xl py-2 hover:bg-slate-800"
+      >
+        Giriş Yap
+      </button>
     </form>
   </div>
 </div>
+
+<!-- ŞİFRE GÖSTER/GİZLE -->
+<script>
+  (function () {
+    const btn = document.getElementById("togglePassword");
+    const input = document.getElementById("passwordInput");
+    if (!btn || !input) return;
+
+    btn.addEventListener("click", () => {
+      input.type = input.type === "password" ? "text" : "password";
+    });
+  })();
+</script>
 {% endblock %}
