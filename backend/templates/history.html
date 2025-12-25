@@ -1,46 +1,82 @@
 {% extends "base.html" %}
 {% block content %}
-<div class="flex items-center justify-between">
-  <h1 class="text-3xl font-bold">Geçmiş Kayıtlar</h1>
-  <div class="flex gap-4">
-    <a class="text-blue-700 underline" href="/teacher">Geri</a>
-    <a class="text-slate-700 underline" href="/logout">Çıkış</a>
+<div class="flex items-start justify-between gap-4">
+  <div>
+    <h1 class="text-2xl font-semibold">Geçmiş Kayıtlar</h1>
+    <p class="text-slate-600 text-sm mt-1">Kapatılmış oturumların listesi.</p>
+  </div>
+
+  <div class="text-sm flex items-center gap-3">
+    <a class="underline" href="/teacher">Geri</a>
+    <a class="underline" href="/logout">Çıkış</a>
   </div>
 </div>
 
-<div class="bg-white rounded-2xl shadow p-5 mt-6 overflow-x-auto">
-  <table class="w-full text-sm">
-    <thead class="bg-slate-50">
-      <tr>
-        <th class="text-left p-2">Ders</th>
-        <th class="text-left p-2">Başlangıç</th>
-        <th class="text-left p-2">Bitiş</th>
-        <th class="text-left p-2">Durum</th>
-        <th class="text-left p-2">İşlem</th>
-      </tr>
-    </thead>
-    <tbody>
-      {% for s in sessions %}
-      <tr class="border-t">
-        <td class="p-2 font-medium">{{ s.course_name }}</td>
-        <td class="p-2">{{ s.started_at }}</td>
-        <td class="p-2">{{ s.expires_at }}</td>
-        <td class="p-2">
-          {% if s.is_active %}
-            <span class="px-2 py-1 rounded-full text-xs bg-emerald-100 text-emerald-700">AKTİF</span>
-          {% else %}
-            <span class="px-2 py-1 rounded-full text-xs bg-slate-100 text-slate-700">KAPALI</span>
-          {% endif %}
-        </td>
-        <td class="p-2">
-          <a class="text-blue-700 underline" href="/teacher/session/{{ s.id }}">Detay</a>
-        </td>
-      </tr>
-      {% endfor %}
-      {% if sessions|length == 0 %}
-        <tr><td class="p-3 text-slate-500" colspan="5">Henüz kayıt yok.</td></tr>
-      {% endif %}
-    </tbody>
-  </table>
+<div class="mt-6 bg-white rounded-2xl shadow p-5">
+  <div class="flex items-center justify-between gap-3">
+    <h2 class="font-semibold">Oturumlar</h2>
+
+    <form method="post" action="/teacher/history/delete-all"
+          onsubmit="return confirm('TÜM geçmiş kayıtlar silinecek. Emin misin?');">
+      <button class="bg-rose-600 text-white px-4 py-2 rounded-lg text-sm">
+        Tümünü Sil
+      </button>
+    </form>
+  </div>
+
+  <div class="overflow-auto border rounded-xl mt-4">
+    <table class="w-full text-sm">
+      <thead class="bg-slate-50">
+        <tr>
+          <th class="text-left p-2">Ders</th>
+          <th class="text-left p-2">Başlangıç</th>
+          <th class="text-left p-2">Bitiş</th>
+          <th class="text-left p-2">Durum</th>
+          <th class="text-left p-2">İşlem</th>
+        </tr>
+      </thead>
+      <tbody>
+        {% for s in sessions %}
+        <tr class="border-t">
+          <td class="p-2 font-medium">{{ s.course_name }}</td>
+
+          <td class="p-2">
+            {{ s.started_at_tr if s.started_at_tr else s.started_at }}
+          </td>
+
+          <td class="p-2">
+            {{ s.expires_at_tr if s.expires_at_tr else s.expires_at }}
+          </td>
+
+          <td class="p-2">
+            {% if s.is_active %}
+              <span class="px-2 py-1 rounded-full text-xs bg-emerald-100 text-emerald-700">AKTİF</span>
+            {% else %}
+              <span class="px-2 py-1 rounded-full text-xs bg-slate-100 text-slate-700">KAPALI</span>
+            {% endif %}
+          </td>
+
+          <td class="p-2">
+            <div class="flex items-center gap-3">
+              <a class="underline text-slate-700" href="/teacher/session/{{ s.id }}">Detay</a>
+
+              <form method="post" action="/teacher/session/{{ s.id }}/delete"
+                    onsubmit="return confirm('Bu oturum ve yoklamaları silinsin mi?');">
+                <button class="underline text-rose-700">
+                  Sil
+                </button>
+              </form>
+            </div>
+          </td>
+        </tr>
+        {% endfor %}
+        {% if sessions|length == 0 %}
+        <tr>
+          <td class="p-3 text-slate-500" colspan="5">Kayıt yok.</td>
+        </tr>
+        {% endif %}
+      </tbody>
+    </table>
+  </div>
 </div>
 {% endblock %}
